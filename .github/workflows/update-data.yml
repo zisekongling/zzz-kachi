@@ -1,0 +1,83 @@
+name: Update ZZZ Wish Data
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+  push:
+    paths-ignore:
+      - 'data.json'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        
+    - name: Run data scraper
+      run: python zzz.py --save
+      
+    - name: Commit and push changes
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const { execSync } = require('child_process');
+          
+          // 配置 Git 用户
+          execSync('git config --global user.name "GitHub Actions"');
+          execSync('git config --global user.email "actions@users.noreply.github.com"');
+          
+          // 添加更改
+          execSync('git add data.json');
+          
+          // 检查是否有更改
+          const status = execSync('git status --porcelain').toString().trim();
+          if (!status) {
+            console.log('没有需要提交的更改');
+            return;
+          }
+          
+          // 提交更改
+          const commitMessage = `Auto update data: ${new Date().toUTCString()}`;
+          execSync(`git commit -m "${commitMessage}"`);
+          
+          // 推送到 GitHub
+          try {
+            execSync('git push origin HEAD:${{ github.ref }}');
+            console.log('推送成功');
+          } catch (error) {
+            console.error('推送失败:', error);
+            // 失败时尝试拉取最新更改再推送
+            execSync('git pull --rebase origin ${{ github.ref }}');
+            execSync('git push origin HEAD:${{ github.ref }}');
+            console.log('重新推送成功');
+          }
+          
+    - name: Push to Gitee Mirror
+      env:
+        GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        GITEE_USERNAME: zisekongling
+        GITEE_REPO: zzz-wish-tracker
+      run: |
+        # 添加 Gitee 远程仓库
+        git remote add gitee https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/${GITEE_USERNAME}/${GITEE_REPO}.git
+        
+        # 推送到 Gitee 镜像仓库
+        git push gitee HEAD:${{ github.ref }}
+        
+        echo "已成功推送到 Gitee 镜像仓库"
