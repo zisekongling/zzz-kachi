@@ -126,8 +126,9 @@ def save_data_to_file():
         print(f"错误: {data['error']}")
         return False
     
+  data_to_save = data[:6]
     with open('data.json', 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(data_to_save, f, ensure_ascii=False, indent=2)
     
     print(f"数据已成功保存到 data.json ({len(data)} 个卡池记录)")
     return True
