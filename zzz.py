@@ -1,7 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 import json
-from datetime import datetime
 import argparse
 import os
 
@@ -120,22 +119,24 @@ def get_gacha_data():
     return all_versions
 
 def save_data_to_file():
-    """保存数据到文件"""
+    """保存数据到文件，只保留最新的6个版本"""
     data = get_gacha_data()
     if 'error' in data:
         print(f"错误: {data['error']}")
         return False
     
-  data_to_save = data[:6]
-    with open('data.json', 'w', encoding='utf-8') as f:
-        json.dump(data_to_save, f, ensure_ascii=False, indent=2)
+    # 只保留最新的6个版本
+    latest_versions = data[:6]
     
-    print(f"数据已成功保存到 data.json ({len(data)} 个卡池记录)")
+    with open('data.json', 'w', encoding='utf-8') as f:
+        json.dump(latest_versions, f, ensure_ascii=False, indent=2)
+    
+    print(f"已保存最新 {len(latest_versions)} 个版本的数据到 data.json")
     return True
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='绝区零卡池数据抓取工具')
-    parser.add_argument('--save', action='store_true', help='将数据保存到 data.json')
+    parser.add_argument('--save', action='store_true', help='将最新的6个版本数据保存到 data.json')
     args = parser.parse_args()
     
     if args.save:
@@ -147,7 +148,7 @@ if __name__ == "__main__":
         
         @app.route('/api/gacha', methods=['GET'])
         def gacha_api():
-            """API端点，返回最新的卡池信息"""
+            """API端点，返回最新的6个版本卡池信息"""
             gacha_data = get_gacha_data()
             if 'error' in gacha_data:
                 return jsonify({"error": gacha_data['error']}), 500
