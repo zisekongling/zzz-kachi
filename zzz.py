@@ -34,6 +34,8 @@ def extract_pool_data(table, pool_type):
     
     # 提取所有行
     rows = table.find_all('tr')
+    agent_headers = []  # 记录表头信息用于类型判断
+    
     for row in rows:
         th = row.find('th')
         td = row.find('td')
@@ -41,6 +43,8 @@ def extract_pool_data(table, pool_type):
             continue
             
         header = th.get_text(strip=True)
+        agent_headers.append(header)  # 收集表头信息
+        
         # 统一处理S级/A级数据
         if header in ['S级代理人', 'S级音擎']:
             data['up_s'] = extract_agent_data(td)
@@ -50,6 +54,22 @@ def extract_pool_data(table, pool_type):
             data['time'] = td.get_text(strip=True)
         elif header == '版本':
             data['version'] = td.get_text(strip=True)
+    
+    # 优化卡池类型判断逻辑
+    # 方法1: 检查表头特征词
+    if any("代理人" in h for h in agent_headers):
+        data['type'] = "character"
+    elif any("音擎" in h for h in agent_headers):
+        data['type'] = "weapon"
+    # 方法2: 检查卡池名称特征词
+    elif 'name' in data:
+        if "角色" in data['name'] or "代理人" in data['name']:
+            data['type'] = "character"
+        elif "音擎" in data['name'] or "武器" in data['name']:
+            data['type'] = "weapon"
+    # 方法3: 检查UP物品数量特征
+    elif len(data.get('up_s', [])) > 1:  # 角色池通常只有一个S级UP
+        data['type'] = "weapon"
     
     return data
 
@@ -130,15 +150,8 @@ def get_gacha_data():
             for inner_table in inner_tables:
                 # 检查是否是卡池表格（包含ys-qy-title类）
                 if inner_table.find('th', class_='ys-qy-title'):
-                    # 判断卡池类型
-                    title_text = inner_table.get_text()
-                    if '独家频段' in title_text:
-                        pool_type = "character"
-                    elif '音擎频段' in title_text:
-                        pool_type = "weapon"
-                    else:
-                        pool_type = "unknown"
-                    
+                    # 初始类型判断（后续会优化）
+                    pool_type = "character" if "独家频段" in inner_table.get_text() else "weapon" if "音擎频段" in inner_table.get_text() else "unknown"
                     pools.append(extract_pool_data(inner_table, pool_type))
         
         if pools:
