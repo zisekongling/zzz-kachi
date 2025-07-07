@@ -72,7 +72,7 @@ jobs:
       env:
         GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         GITEE_USERNAME: zisekongling
-        GITEE_REPO: zzz-wish-tracker
+        GITEE_REPO: zzz-kachi
       run: |
         # 添加 Gitee 远程仓库
         git remote add gitee https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/${GITEE_USERNAME}/${GITEE_REPO}.git
