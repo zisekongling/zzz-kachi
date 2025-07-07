@@ -3,22 +3,34 @@ from bs4 import BeautifulSoup
 import json
 import argparse
 import os
+import re
 
 def extract_pool_data(table, pool_type):
     """从单个卡池表格中提取数据"""
     data = {"type": pool_type}
     
-    # 提取卡池名称
+    # 提取卡池名称 - 处理不同情况
     title_th = table.find('th', class_='ys-qy-title')
     if title_th:
+        # 尝试提取链接文本
         a_tag = title_th.find('a')
-        if a_tag and 'title' in a_tag.attrs:
-            data['name'] = a_tag['title'].replace('文件:', '').replace('.png', '')
-        # 处理图片形式的卡池名称
-        else:
-            img_tag = title_th.find('img')
-            if img_tag and 'alt' in img_tag.attrs:
-                data['name'] = img_tag['alt']
+        if a_tag:
+            if a_tag.get('title'):
+                data['name'] = a_tag['title'].replace('文件:', '').replace('.png', '').strip()
+            else:
+                data['name'] = a_tag.get_text(strip=True)
+        
+        # 尝试提取图片文本
+        img_tag = title_th.find('img')
+        if img_tag and not data.get('name'):
+            if img_tag.get('alt'):
+                data['name'] = img_tag['alt'].strip()
+            elif img_tag.get('title'):
+                data['name'] = img_tag['title'].strip()
+    
+    # 如果以上方法都失败，直接提取th文本
+    if not data.get('name') and title_th:
+        data['name'] = title_th.get_text(strip=True)
     
     # 提取所有行
     rows = table.find_all('tr')
@@ -29,23 +41,43 @@ def extract_pool_data(table, pool_type):
             continue
             
         header = th.get_text(strip=True)
-        if header == '时间':
+        # 统一处理S级/A级数据
+        if header in ['S级代理人', 'S级音擎']:
+            data['up_s'] = extract_agent_data(td)
+        elif header in ['A级代理人', 'A级音擎']:
+            data['up_a'] = extract_agent_data(td)
+        elif header == '时间':
             data['time'] = td.get_text(strip=True)
         elif header == '版本':
             data['version'] = td.get_text(strip=True)
-        elif 'S级' in header:
-            # 处理链接和纯文本两种情况
-            agents = [a.get_text(strip=True) for a in td.find_all('a')]
-            if not agents:
-                agents = [span.get_text(strip=True) for span in td.find_all('span')]
-            data['up_s'] = agents
-        elif 'A级' in header:
-            agents = [a.get_text(strip=True) for a in td.find_all('a')]
-            if not agents:
-                agents = [span.get_text(strip=True) for span in td.find_all('span')]
-            data['up_a'] = agents
     
     return data
+
+def extract_agent_data(td):
+    """提取代理人和音擎数据，处理不同情况"""
+    # 尝试提取链接
+    agents = []
+    for a in td.find_all('a'):
+        agent_text = a.get_text(strip=True)
+        if agent_text:
+            agents.append(agent_text)
+    
+    # 如果没有链接，处理纯文本
+    if not agents:
+        text_content = td.get_text(strip=True)
+        # 使用正则表达式提取方括号内的内容
+        matches = re.findall(r'\[([^\]]+)\]', text_content)
+        if matches:
+            agents = matches
+        elif text_content:
+            # 尝试按换行分割
+            lines = [line.strip() for line in text_content.split('\n') if line.strip()]
+            if lines:
+                agents = lines
+            else:
+                agents = [text_content]
+    
+    return agents
 
 def get_gacha_data():
     url = "https://wiki.biligame.com/zzz/%E5%BE%80%E6%9C%9F%E8%B0%83%E9%A2%91"
@@ -54,7 +86,7 @@ def get_gacha_data():
     }
     
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         return {"error": f"请求失败: {str(e)}"}
@@ -65,7 +97,6 @@ def get_gacha_data():
     # 找到所有版本标题 (h3标签)
     version_headings = soup.find_all('h3')
     for heading in version_headings:
-        # 提取版本信息
         version_span = heading.find('span', class_='mw-headline')
         if not version_span:
             continue
@@ -73,35 +104,42 @@ def get_gacha_data():
         version_title = version_span.get_text(strip=True)
         if '·' in version_title:
             version_number = version_title.split('·')[0].strip()
-            phase = "上半" if "第一" in version_title else "下半"
+            # 判断是上半还是下半
+            if "第一" in version_title or "上半" in version_title:
+                phase = "上半"
+            elif "第二" in version_title or "下半" in version_title:
+                phase = "下半"
+            else:
+                phase = "未知"
         else:
             continue
         
-        # 获取当前版本区块的所有表格
+        # 获取当前版本区块的所有外层表格
         version_tables = []
         next_element = heading.find_next_sibling()
         while next_element and next_element.name != 'h3':
+            # 查找所有wikitable表格（外层表格）
             if next_element.name == 'table' and 'wikitable' in next_element.get('class', []):
                 version_tables.append(next_element)
             next_element = next_element.find_next_sibling()
         
         pools = []
-        for table in version_tables:
-            # 检查是否是卡池表格组（包含"独家频段"标题）
-            if table.find('th', string='独家频段'):
-                # 提取角色池和武器池
-                character_td = table.find('td')
-                weapon_td = table.find_all('td')[1] if len(table.find_all('td')) > 1 else None
-                
-                if character_td:
-                    character_table = character_td.find('table', class_='wikitable')
-                    if character_table:
-                        pools.append(extract_pool_data(character_table, "character"))
-                
-                if weapon_td:
-                    weapon_table = weapon_td.find('table', class_='wikitable')
-                    if weapon_table:
-                        pools.append(extract_pool_data(weapon_table, "weapon"))
+        for outer_table in version_tables:
+            # 查找所有内嵌的卡池表格
+            inner_tables = outer_table.find_all('table', class_='wikitable')
+            for inner_table in inner_tables:
+                # 检查是否是卡池表格（包含ys-qy-title类）
+                if inner_table.find('th', class_='ys-qy-title'):
+                    # 判断卡池类型
+                    title_text = inner_table.get_text()
+                    if '独家频段' in title_text:
+                        pool_type = "character"
+                    elif '音擎频段' in title_text:
+                        pool_type = "weapon"
+                    else:
+                        pool_type = "unknown"
+                    
+                    pools.append(extract_pool_data(inner_table, pool_type))
         
         if pools:
             all_versions.append({
@@ -111,10 +149,10 @@ def get_gacha_data():
             })
     
     # 按版本号排序（从新到旧）
-    all_versions.sort(key=lambda x: (
-        tuple(map(int, x['version'].split('.'))), 
-        0 if x['phase'] == '上半' else 1
-    ), reverse=True)
+    all_versions.sort(
+        key=lambda x: [int(part) for part in x['version'].split('.')],
+        reverse=True
+    )
     
     return all_versions
 
@@ -126,7 +164,7 @@ def save_data_to_file():
         return False
     
     # 只保留最新的6个版本
-    latest_versions = data[:6]
+    latest_versions = data[:10]
     
     with open('data.json', 'w', encoding='utf-8') as f:
         json.dump(latest_versions, f, ensure_ascii=False, indent=2)
@@ -136,7 +174,7 @@ def save_data_to_file():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='绝区零卡池数据抓取工具')
-    parser.add_argument('--save', action='store_true', help='将最新的6个版本数据保存到 data.json')
+    parser.add_argument('--save', action='store_true', help='将数据保存到文件')
     args = parser.parse_args()
     
     if args.save:
@@ -148,9 +186,9 @@ if __name__ == "__main__":
         
         @app.route('/api/gacha', methods=['GET'])
         def gacha_api():
-            """API端点，返回最新的6个版本卡池信息"""
+            """API端点，返回最新的卡池信息"""
             gacha_data = get_gacha_data()
-            if 'error' in gacha_data:
+            if isinstance(gacha_data, dict) and 'error' in gacha_data:
                 return jsonify({"error": gacha_data['error']}), 500
             # 返回最新的6个版本
             return jsonify(gacha_data[:6])
