@@ -2,7 +2,10 @@ name: Update ZZZ Wish Data
 
 on:
   schedule:
-    - cron: '0 */2 * * *'
+    # 每周五 20:00 (UTC+8)
+    - cron: '0 12 * * 5'    
+    # 每周六、周日、周一 00:00 (UTC+8)   
+    - cron: '0 16 * * 6,0,1'
   workflow_dispatch:
   push:
     paths-ignore:
