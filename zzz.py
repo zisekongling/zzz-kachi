@@ -203,8 +203,8 @@ if __name__ == "__main__":
             gacha_data = get_gacha_data()
             if isinstance(gacha_data, dict) and 'error' in gacha_data:
                 return jsonify({"error": gacha_data['error']}), 500
-            # 返回最新的6个版本
-            return jsonify(gacha_data[:6])
+            # 返回最新的10个版本
+            return jsonify(gacha_data[:10])
         
         print("启动本地服务器: http://localhost:5000/api/gacha")
         app.run(host='0.0.0.0', port=5000, debug=True)
